@@ -124,7 +124,7 @@ func main() {
 			return
 		}
 		defer resp.Body.Close()
-		fmt.Println("response status:", resp.Status)
+		log.Println("response status:", resp.Status)
 
 		v := struct {
 			IP string `json:"ip"`
@@ -143,10 +143,10 @@ func main() {
 }
 
 func ls(prefix string) http.HandlerFunc {
-	fmt.Println("prefix", prefix)
+	log.Println("prefix", prefix)
 	return func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, prefix)
-		fmt.Println("URL", r.URL.Path, "->", "path", path)
+		log.Println("URL", r.URL.Path, "->", "path", path)
 
 		fi, err := os.Stat(path)
 		if err != nil {
