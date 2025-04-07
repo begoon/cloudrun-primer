@@ -1,3 +1,3 @@
 # GCP Cloud Run primer
 
-[![Deploy to Cloud Run](https://deploy.cloud.run/button.svg?git_repo=https://github.com/begoon/cloudrun-primer)](https://deploy.cloud.run/button.svg?git_repo=https://github.com/begoon/cloudrun-primer)
+[![Run on Google Cloud](https://deploy.cloud.run/button.svg)](https://deploy.cloud.run?git_repo=https://github.com/begoon/cloudrun-primer)
