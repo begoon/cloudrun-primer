@@ -1,7 +1,9 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"html/template"
 	"io"
@@ -13,7 +15,10 @@ import (
 	"strings"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+
 	"cloud.google.com/go/compute/metadata"
+	"github.com/MicahParks/keyfunc/v3"
 	"github.com/dustin/go-humanize"
 	_ "golang.org/x/crypto/x509roots/fallback"
 )
@@ -48,6 +53,8 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 
 const large = "http://ipv4.download.thinkbroadband.com/512MB.zip"
 
+const iapPublicKeysURL = "https://www.gstatic.com/iap/verify/public_key-jwk"
+
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -72,7 +79,7 @@ func main() {
 		w.Write([]byte("CPU=" + cpu + "\n"))
 
 		gce := metadata.OnGCE()
-		w.Write([]byte("GGE=" + strconv.FormatBool(gce) + "\n"))
+		w.Write([]byte("GCE=" + strconv.FormatBool(gce) + "\n"))
 
 		if gce {
 			w.Write([]byte("\n"))
@@ -84,7 +91,25 @@ func main() {
 
 		iapUser := r.Header.Get("X-Goog-Authenticated-User-Email")
 		if iapUser != "" {
+			w.Write([]byte("\n"))
 			w.Write([]byte("X-Goog-Authenticated-User-Email=" + iapUser + "\n"))
+
+			iapJWT := r.Header.Get("X-Goog-IAP-JWT-Assertion")
+			if iapJWT != "" {
+				token, err := iapValidateJWT(ctx, iapJWT)
+				if err != nil {
+					w.Write([]byte("X-Goog-IAP-JWT-Assertion error: " + err.Error() + "\n"))
+				} else {
+					w.Write([]byte("X-Goog-IAP-JWT-Assertion claims:\n"))
+					claims, err := json.MarshalIndent(token.Claims, "", "  ")
+					if err != nil {
+						w.Write([]byte("marshal claims: " + err.Error() + "\n"))
+					} else {
+						w.Write(claims)
+						w.Write([]byte("\n"))
+					}
+				}
+			}
 		}
 	})
 
@@ -222,4 +247,38 @@ func ls(prefix string) http.HandlerFunc {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 		}
 	}
+}
+
+func fetctIAPKeys(ctx context.Context) (keyfunc.Keyfunc, error) {
+	k, err := keyfunc.NewDefaultCtx(ctx, []string{iapPublicKeysURL})
+	if err != nil {
+		log.Fatalf("create keyfunc.Keyfunc from %s: %v", iapPublicKeysURL, err)
+	}
+	return k, nil
+}
+
+func iapValidateJWT(ctx context.Context, jwtToken string) (*jwt.Token, error) {
+	keyfunc, err := keyfunc.NewDefaultCtx(ctx, []string{iapPublicKeysURL})
+	if err != nil {
+		return nil, fmt.Errorf("fetch IAP keys from %s: %w", iapPublicKeysURL, err)
+	}
+
+	token, err := jwt.Parse(jwtToken, keyfunc.Keyfunc)
+	if err != nil {
+		return nil, fmt.Errorf("parse/verify JWT [%s]: %w", jwtToken, err)
+	}
+
+	log.Println("token", token)
+
+	if !token.Valid {
+		return nil, errors.New("invalid JWT: " + token.Raw)
+	}
+
+	claims, ok := token.Claims.(jwt.MapClaims)
+	if !ok {
+		return nil, errors.New("invalid JWT claims type")
+	}
+
+	log.Println("claims", claims)
+	return token, nil
 }
