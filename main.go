@@ -53,8 +53,6 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 
 const large = "http://ipv4.download.thinkbroadband.com/512MB.zip"
 
-const iapPublicKeysURL = "https://www.gstatic.com/iap/verify/public_key-jwk"
-
 func main() {
 	port := os.Getenv("PORT")
 	if port == "" {
@@ -249,13 +247,7 @@ func ls(prefix string) http.HandlerFunc {
 	}
 }
 
-func fetctIAPKeys(ctx context.Context) (keyfunc.Keyfunc, error) {
-	k, err := keyfunc.NewDefaultCtx(ctx, []string{iapPublicKeysURL})
-	if err != nil {
-		log.Fatalf("create keyfunc.Keyfunc from %s: %v", iapPublicKeysURL, err)
-	}
-	return k, nil
-}
+const iapPublicKeysURL = "https://www.gstatic.com/iap/verify/public_key-jwk"
 
 func iapValidateJWT(ctx context.Context, jwtToken string) (*jwt.Token, error) {
 	keyfunc, err := keyfunc.NewDefaultCtx(ctx, []string{iapPublicKeysURL})
