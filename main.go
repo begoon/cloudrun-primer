@@ -81,6 +81,11 @@ func main() {
 			w.Write([]byte("zone=" + ok(metadata.ZoneWithContext(ctx)) + "\n"))
 			w.Write([]byte("email=" + ok(metadata.EmailWithContext(ctx, "")) + "\n"))
 		}
+
+		iapUser := r.Header.Get("X-Goog-Authenticated-User-Email")
+		if iapUser != "" {
+			w.Write([]byte("X-Goog-Authenticated-User-Email=" + iapUser + "\n"))
+		}
 	})
 
 	http.HandleFunc("/speed", func(w http.ResponseWriter, r *http.Request) {
