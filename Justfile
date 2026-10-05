@@ -1,7 +1,7 @@
 default: build
 
-set unstable := true
-set dotenv-load := true
+set unstable
+set dotenv-load
 
 PROJECT := env('PROJECT')
 REGION := env('REGION')
@@ -10,7 +10,7 @@ NAME := env('NAME', "cloudrun-primer")
 REPO := env('REPO', "UNDEFINED")
 TAG := env('TAG', datetime("%Y%m%d%H%M%S"))
 
-CLOUD_BUILD_REPO := env('CLOUD_BUILD_REPO')
+CLOUD_BUILD_REPO := env('CLOUD_BUILD_REPO', "UNDEFINED")
 
 build:
     go build -o ./exe .
@@ -25,10 +25,10 @@ build-amd64:
     go build -ldflags="-s -w" -o ./exe .
 
 docker-build:
-    docker build -t {{ NAME }} .
+    docker build --provenance=false -t {{ NAME }} .
 
 docker-build-amd64:
-    docker build --platform linux/amd64 -t {{ NAME }} .
+    docker build --platform linux/amd64 --provenance=false -t {{ NAME }} .
 
 docker-run:
     docker run --rm -it -p :8000:8000 {{ NAME }}

@@ -51,7 +51,7 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	return
 }
 
-const large = "http://ipv4.download.thinkbroadband.com/512MB.zip"
+const large = "https://fsn1-speed.hetzner.com/100MB.bin"
 
 func main() {
 	port := os.Getenv("PORT")
@@ -113,12 +113,17 @@ func main() {
 
 	http.HandleFunc("/speed", func(w http.ResponseWriter, r *http.Request) {
 		r, err := http.NewRequest("GET", large, nil)
-		r.Header.Add("User-Agent", "Mozilla/5.0")
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		r.Header.Add("User-Agent", "curl/8.7.1")
 		resp, err := http.DefaultClient.Do(r)
+		if err != nil {
+			log.Printf("speed download failed: %v", err)
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
 		fmt.Println("response status:", resp.Status)
 		defer resp.Body.Close()
 
@@ -126,6 +131,7 @@ func main() {
 
 		started := time.Now()
 		ww := &Writer{started: started, writer: w}
+		fmt.Fprintln(w, "url="+large)
 		fmt.Fprintln(w, "started at", started)
 		written, err := io.Copy(ww, resp.Body)
 		if err != nil {
@@ -146,20 +152,32 @@ func main() {
 	http.Handle("/fs/", http.StripPrefix("/fs/", fs))
 
 	http.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
-		resp, err := http.Get("https://api.myip.com/")
+		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.ipify.org?format=json", nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			log.Printf("IP lookup failed: %v", err)
+			http.Error(w, err.Error(), http.StatusBadGateway)
+			return
+		}
 		defer resp.Body.Close()
 		log.Println("response status:", resp.Status)
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, "IP lookup returned "+resp.Status, http.StatusBadGateway)
+			return
+		}
 
 		v := struct {
 			IP string `json:"ip"`
 		}{}
 		err = json.NewDecoder(resp.Body).Decode(&v)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			http.Error(w, err.Error(), http.StatusBadGateway)
 			return
 		}
 		w.Write([]byte(v.IP))
