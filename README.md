@@ -46,10 +46,10 @@ go test ./...
 The Dockerfile builds a static Go binary and copies it into a `scratch` image. Set the project, service region, and Artifact Registry repository for your environment:
 
 ```sh
-export PROJECT=home-az
-export REGION=europe-west1
+export PROJECT=<project>
+export REGION=<region>
 export NAME=cloudrun-primer
-export REPO=europe-west2-docker.pkg.dev/home-az/az
+export REPO=europe-west2-docker.pkg.dev/<repo>
 export TAG=$(date +%Y%m%d%H%M%S)
 
 gcloud auth configure-docker europe-west2-docker.pkg.dev
