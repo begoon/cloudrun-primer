@@ -37,11 +37,11 @@ docker-tag-push:
     docker tag {{ NAME }}:latest {{ REPO }}/{{ NAME }}:{{ TAG }}
     docker push {{ REPO }}/{{ NAME }}:{{ TAG }}
 
-docker-release: build-amd64 docker-build-amd64 docker-tag-push
+docker-release: docker-build-amd64 docker-tag-push
 
 promote:
     #!/bin/bash
-    gcloud run deploy stubbed \
+    gcloud run deploy {{ NAME }} \
     --image={{ REPO }}/{{ NAME }}:{{ TAG }} \
     --allow-unauthenticated \
     --port=8000 \

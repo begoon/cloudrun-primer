@@ -1,6 +1,6 @@
 module cloudrun-stub
 
-go 1.24.1
+go 1.27.0
 
 require (
 	cloud.google.com/go/compute/metadata v0.6.0

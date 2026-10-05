@@ -24,10 +24,11 @@ import (
 )
 
 type Writer struct {
-	writer  io.Writer
-	started time.Time
-	size    uint64
-	block   uint64
+	writer    http.ResponseWriter
+	started   time.Time
+	size      uint64
+	block     uint64
+	outputErr error
 }
 
 const blockSize = 1024 * 1024 * 50
@@ -36,19 +37,32 @@ func (w *Writer) Write(p []byte) (n int, err error) {
 	n = len(p)
 	w.size += uint64(n)
 	w.block += uint64(n)
-	if w.block > blockSize {
+	if w.block >= blockSize {
 		elapsed := time.Since(w.started)
 		throughput := float64(w.size) / elapsed.Seconds()
-		fmt.Fprintf(
-			w.writer, "block %s/%s | throughput %s | elapsed %s\n",
+		_, err = fmt.Fprintf(
+			w.writer, "block %s/%s | throughput %s/s | elapsed %s\n",
 			humanize.Bytes(w.block), humanize.Bytes(w.size),
 			humanize.Bytes(uint64(throughput)),
 			elapsed,
 		)
+		if err != nil {
+			w.outputErr = err
+			return n, err
+		}
 		w.block = w.block - blockSize
-		w.writer.(http.Flusher).Flush()
+		err = flushResponse(w.writer)
+		w.outputErr = err
 	}
 	return
+}
+
+func flushResponse(w http.ResponseWriter) error {
+	err := http.NewResponseController(w).Flush()
+	if errors.Is(err, http.ErrNotSupported) {
+		return nil
+	}
+	return err
 }
 
 const large = "https://fsn1-speed.hetzner.com/100MB.bin"
@@ -111,14 +125,31 @@ func main() {
 		}
 	})
 
-	http.HandleFunc("/speed", func(w http.ResponseWriter, r *http.Request) {
-		r, err := http.NewRequest("GET", large, nil)
+	http.HandleFunc("/speed", speedHandler(http.DefaultClient, large, 2*time.Minute))
+
+	fs := http.FileServer(http.Dir("/"))
+	http.Handle("/fs/", http.StripPrefix("/fs/", fs))
+
+	http.HandleFunc("/ip", ipHandler(http.DefaultClient, "https://api.ipify.org?format=json"))
+
+	http.HandleFunc("GET /ls/{path...}", ls("/ls"))
+
+	if err := http.ListenAndServe(":"+port, nil); err != nil {
+		log.Fatal(err)
+	}
+}
+
+func speedHandler(client *http.Client, url string, timeout time.Duration) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), timeout)
+		defer cancel()
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		r.Header.Add("User-Agent", "curl/8.7.1")
-		resp, err := http.DefaultClient.Do(r)
+		req.Header.Add("User-Agent", "curl/8.7.1")
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("speed download failed: %v", err)
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -126,40 +157,58 @@ func main() {
 		}
 		fmt.Println("response status:", resp.Status)
 		defer resp.Body.Close()
+		if resp.StatusCode != http.StatusOK {
+			http.Error(w, "speed download returned "+resp.Status, http.StatusBadGateway)
+			return
+		}
 
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
 
 		started := time.Now()
 		ww := &Writer{started: started, writer: w}
-		fmt.Fprintln(w, "url="+large)
-		fmt.Fprintln(w, "started at", started)
+		if _, err := fmt.Fprintf(w, "url=%s\nstarted at %s\n", url, started.Format(time.RFC3339Nano)); err != nil {
+			log.Printf("speed output failed: %v", err)
+			return
+		}
+		if err := flushResponse(w); err != nil {
+			log.Printf("speed flush failed: %v", err)
+			return
+		}
 		written, err := io.Copy(ww, resp.Body)
 		if err != nil {
-			http.Error(w, err.Error(), http.StatusInternalServerError)
+			log.Printf("speed download failed: %v", err)
+			if ww.outputErr == nil {
+				if _, writeErr := fmt.Fprintf(w, "error=download failed: %v\n", err); writeErr != nil {
+					log.Printf("speed output failed: %v", writeErr)
+				}
+			}
 			return
 		}
 		elapsed := time.Since(started)
 		throughput := float64(ww.size) / elapsed.Seconds()
-		fmt.Fprintf(
-			w, "downloaded %s | throughput %s | elapsed %s\n",
+		_, err = fmt.Fprintf(
+			w, "downloaded %s | throughput %s/s | elapsed %s\n",
 			humanize.Bytes(uint64(written)),
 			humanize.Bytes(uint64(throughput)),
 			elapsed,
 		)
-	})
+		if err != nil {
+			log.Printf("speed output failed: %v", err)
+		}
+	}
+}
 
-	fs := http.FileServer(http.Dir("/"))
-	http.Handle("/fs/", http.StripPrefix("/fs/", fs))
-
-	http.HandleFunc("/ip", func(w http.ResponseWriter, r *http.Request) {
+func ipHandler(client *http.Client, url string) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
 		ctx, cancel := context.WithTimeout(r.Context(), 10*time.Second)
 		defer cancel()
-		req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://api.ipify.org?format=json", nil)
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusInternalServerError)
 			return
 		}
-		resp, err := http.DefaultClient.Do(req)
+		resp, err := client.Do(req)
 		if err != nil {
 			log.Printf("IP lookup failed: %v", err)
 			http.Error(w, err.Error(), http.StatusBadGateway)
@@ -181,11 +230,7 @@ func main() {
 			return
 		}
 		w.Write([]byte(v.IP))
-	})
-
-	http.HandleFunc("GET /ls/{path...}", ls("/ls"))
-
-	http.ListenAndServe(":"+port, nil)
+	}
 }
 
 func ls(prefix string) http.HandlerFunc {

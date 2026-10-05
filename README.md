@@ -19,15 +19,15 @@ The speed test streams the download through a counter rather than storing the fi
 ```text
 url=https://fsn1-speed.hetzner.com/100MB.bin
 started at ...
-block 52 MB/52 MB | throughput 65 MB | elapsed 801.897557ms
-downloaded 105 MB | throughput 63 MB | elapsed 1.662485033s
+block 52 MB/52 MB | throughput 65 MB/s | elapsed 801.897557ms
+downloaded 105 MB | throughput 63 MB/s | elapsed 1.662485033s
 ```
 
-Throughput values represent bytes per second, although the output labels them as MB.
+The download has a two-minute timeout and is canceled when the caller disconnects. Connection failures and upstream non-200 responses return HTTP 502 before streaming starts. If a download fails after output has started, the response includes an `error=download failed: ...` line instead of a success summary; its HTTP status remains 200 because the headers have already been sent.
 
 ## Run locally
 
-Use Go 1.24.1 or later:
+Use Go 1.27 or later:
 
 ```sh
 go run .
@@ -73,6 +73,6 @@ just docker-build-amd64
 just docker-tag-push
 ```
 
-Use the explicit deployment command above for the configured service name; the existing `just promote` recipe targets a service named `stubbed`.
+`just docker-release` builds and pushes the Linux/amd64 image. `just promote` deploys the configured `NAME` with the recipe's demo settings. Set an explicit `TAG` when invoking release and promote separately so both commands use the same image tag.
 
 This application is for educational purposes. Its routes expose environment variables and container files; restrict access when those contain sensitive information.
